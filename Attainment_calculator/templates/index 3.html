@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSE Department Faculty Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static',filename='css/styles.css') }}">
+</head>
+<body>
+    <header>
+        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="College Logo" class="logo">
+        <img src="{{ url_for('static', filename='images/SYNC.png') }}" alt="SYNC Logo" class="sync-logo">
+    </header>
+    <main>
+        <section class="form-section">
+            <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="regNumbers"><strong>Enter Registration Numbers:</strong></label>
+                    <textarea id="regNumbers" name="regNumbers" rows="4" cols="50" placeholder="Enter one or more registration numbers separated by commas" required></textarea>
+                </div>
+                <div class="form-group" id="form-group">
+                    <label for="pdfFiles"><strong>Upload PDF Files:</strong></label>
+                    <div class="button-group">
+                        <input type="file" id="pdfFiles" name="pdfFiles" accept=".pdf">
+                        <button type="button" id="addFileButton" class="square-button add">+</button>
+                    </div>
+                </div>
+                <button type="submit">Submit</button>
+            </form>
+            <button id="generateCAMButton" class="cambutton">Generate CAM</button>
+            <div id="camTableContainer" style="display: none;">
+                <h2>CAM Table</h2>
+                <table id="camTable" border="1">
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>CO1</th>
+                            <th>CO2</th>
+                            <th>CO3</th>
+                            <th>CO4</th>
+                            <th>CO5</th>
+                            <th>CO6</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Table rows will be populated here -->
+                    </tbody>
+                    <tfoot>
+                        <tr id="sumRow">
+                            <th>Total Possible CO Attainment</th>
+                            <th id="sumCO1">0</th>
+                            <th id="sumCO2">0</th>
+                            <th id="sumCO3">0</th>
+                            <th id="sumCO4">0</th>
+                            <th id="sumCO5">0</th>
+                            <th id="sumCO6">0</th>
+                            <th id="sumTotal">0</th>
+                        </tr>
+                    </tfoot>
+                </table>
+                <button id="calculateAttainmentButton" class="cambutton calc-button" style="display: none;">Calculate Attainment</button>
+                <a id="downloadLink" href="#" class="download-button" style="display: none;">Download Results</a>
+            </div>
+        </section>
+    </main>
+    <script>
+        document.getElementById('generateCAMButton').addEventListener('click', function() {
+            document.getElementById('camTableContainer').style.display = 'block';
+            document.getElementById('calculateAttainmentButton').style.display = 'block';
+        });
+
+        // Show the "Download Results" button after the "Calculate Attainment" button is clicked
+        document.getElementById('calculateAttainmentButton').addEventListener('click', function() {
+            document.getElementById('downloadLink').style.display = 'block';
+        });
+    </script>
+    <script src="{{ url_for('static',filename='js/scripts.js') }}"></script>
+</body>
+</html>
