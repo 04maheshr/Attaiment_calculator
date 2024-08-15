@@ -111,6 +111,100 @@ def calculate_attainment(split_up_df, marks_df, reg_numbers):
             attainment_df.at[index, co] = attainment_values[co]
 
     return attainment_df
+def calculate_students_above_target(attainment_df, target_percentage, total_attainment):
+    # Calculate the threshold based on the target percentage
+    threshold_values = {co: (target_percentage / 100) * total_attainment[co] for co in total_attainment.index}
+
+    # Prepare a DataFrame to store results
+    above_target_df = pd.DataFrame(columns=['CO', 'No. of Students', 'Percentage of Students'])
+
+    total_students = len(attainment_df)
+
+    for co in attainment_df.columns[1:]:  # Skip the 'Register number' column
+        threshold = threshold_values[co]
+        # Calculate the number of students who scored above the threshold
+        num_students_above = len(attainment_df[attainment_df[co] >= threshold])
+        # Calculate the percentage of students who scored above the threshold
+        percentage_above = (num_students_above / total_students) * 100
+        # Append the results to the DataFrame
+        above_target_df = pd.concat([above_target_df, pd.DataFrame([[co, num_students_above, percentage_above]], columns=['CO', 'No. of Students', 'Percentage of Students'])])
+
+    return above_target_df
+
+def get_attainment_levels(dict):
+    levels = {}
+    for level in [3, 2, 1, 0]:
+        while True:
+            try:
+                interval = dict[str(level)].split('-')
+                low, high = float(interval[0]), float(interval[1])
+                levels[level] = (low, high)
+                break
+            except ValueError:
+                print("Please enter a valid percentage range.")
+
+    return levels
+
+def assign_attainment_levels(attainment_df, levels):
+    attainment_levels_df = attainment_df.copy()
+
+    for co in ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6']:
+        low, high = levels[3]
+        # Assign levels based on intervals
+        def assign_level(value):
+            for level in sorted(levels.keys(), reverse=True):
+                if levels[level][0] <= value <= levels[level][1]:
+                    return level
+            return 0
+        attainment_levels_df[f'{co}_Level'] = attainment_df[co].apply(assign_level)
+
+    return attainment_levels_df
+
+def get_clo_pso_input():
+    clo_pso_data = []
+    for i in range(1, 7):  # CLO1 to CLO6
+        clo_row = [f'CLO{i}']
+        for j in range(1, 13):  # PO1 to PO12
+            value = float(input(f"Enter value for CLO{i}, PO{j}: "))
+            clo_row.append(value)
+        for j in range(1, 4):  # PSO1 to PSO3
+            value = float(input(f"Enter value for CLO{i}, PSO{j}: "))
+            clo_row.append(value)
+        clo_pso_data.append(clo_row)
+
+    # Create DataFrame from input
+    columns = ['CLO'] + [f'PO{i}' for i in range(1, 13)] + [f'PSO{i}' for i in range(1, 4)]
+    df_clo_pso = pd.DataFrame(clo_pso_data, columns=columns)
+
+    return df_clo_pso
+
+def calculate_targets_and_attained(df_clo_pso, attainment_df):
+    # Ensure the data is numeric
+    df_clo_pso = df_clo_pso.apply(pd.to_numeric, errors='coerce')
+    attainment_df = attainment_df.apply(pd.to_numeric, errors='coerce')
+
+    # Initialize lists for targets and attained values
+    targets = df_clo_pso.mean()
+    attained_values = []
+
+    # For each PO and PSO
+    for column in df_clo_pso.columns:
+        total_sum = 0
+
+        for i in range(len(df_clo_pso)):
+            total_sum += (df_clo_pso.iloc[i][column] / 3) * attainment_df.iloc[0][i]  # Ensure co_values is replaced correctly
+
+        attained_value = total_sum / len(df_clo_pso)
+        attained_values.append(attained_value)
+
+    df_attained = pd.DataFrame([attained_values], columns=df_clo_pso.columns, index=['Attained'])
+
+    df_final = pd.DataFrame(columns=df_attained.columns)
+    df_final.loc['Target'] = targets
+    df_final.loc['Attained'] = df_attained.loc['Attained']
+
+    return targets, df_final
+
 
 # Function to write to Excel
 def write_to_excel(df_transposed, split_up_df_without_sum, attainment_table, total_possible_attainment, target_value, output_path, info, file_order):
@@ -248,12 +342,23 @@ def calculate_attainment_route():
     try:
         reg_numbers = request.form.get('regNumbers')
         components_array = request.form.get('ComponentsArray')
+        targetPercentage=request.form.get('targetPercentage')
+        target_range=request.form.get('Target_range')
+        COPOMapperTablevalues=request.form.get('COPOMapperTablevalues')
+        
         file_order = request.form.get('fileOrder')
         if not reg_numbers or not components_array:
             return jsonify({'error': 'Missing regNumbers or ComponentsArray'})
 
         reg_numbers = json.loads(reg_numbers)
         components_array = json.loads(components_array)
+        targetPercentage=json.loads(targetPercentage)
+        target_range=json.loads(target_range)
+        COPOMapperTablevalues=json.loads(COPOMapperTablevalues)
+        targetPercentage=int(targetPercentage)
+        print(COPOMapperTablevalues)
+        print(target_range)
+        print(type(targetPercentage))
         file_order = json.loads(file_order)
         pdf_files = request.files.getlist('pdfFiles')
         uploaded_files = pdf_files
@@ -286,6 +391,23 @@ def calculate_attainment_route():
         split_up_df_without_sum = split_up_df.drop(columns=['Row-wise Sum'])
 
         attainment_table = calculate_attainment(split_up_df, df_transposed, reg_numbers)
+        above_target_df = calculate_students_above_target(attainment_table, targetPercentage, total_attainment)
+        print("\nAttainment Levels:")
+        print(above_target_df)
+        attainment_levels = get_attainment_levels(target_range)
+        print("\nAttainment Levels:")
+        print(attainment_levels)
+        attainment_levels_df = assign_attainment_levels(attainment_table, attainment_levels)
+        print("\nAttainment Levels Assigned:")
+        # this values is not changing but slightly different
+        print(attainment_levels_df)
+        print("\nAttainment Levels Assigned:")
+        df_clo_pso = pd.DataFrame(COPOMapperTablevalues)
+        df_clo_pso.insert(0, 'CLO', [f'CLO{i+1}' for i in range(len(COPOMapperTablevalues['PO1']))])
+        print(df_clo_pso)
+        targets, df_attained = calculate_targets_and_attained(df_clo_pso, attainment_table)
+
+        
 
         df_transposed = df_transposed.round(2)
         split_up_df_without_sum = split_up_df_without_sum.round(2)
@@ -312,3 +434,4 @@ def calculate_attainment_route():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
