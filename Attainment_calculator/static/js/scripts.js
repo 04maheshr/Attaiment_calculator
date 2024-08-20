@@ -279,10 +279,19 @@ for (let colIndex = 1; colIndex < headers.length; colIndex++) {
         let inputElement = cell.querySelector('input');
 
         if (inputElement) {
-            let value = inputElement.value || 0;
-            colValues.push(parseFloat(value));
+            let value = inputElement.value.trim(); // Trim to handle any accidental spaces
+            if (value === "") {
+                colValues.push(NaN); // Push NaN for empty values
+            } else {
+                colValues.push(parseFloat(value));
+            }
         } else {
-            colValues.push(parseFloat(cell.textContent) || 0); // Handle non-input cells
+            let cellText = cell.textContent.trim();
+            if (cellText === "") {
+                colValues.push(NaN); // Push NaN for empty text content
+            } else {
+                colValues.push(parseFloat(cellText));
+            }
         }
     }
 
@@ -292,6 +301,10 @@ for (let colIndex = 1; colIndex < headers.length; colIndex++) {
 
 // Log the dictionary
 console.log(dictionary);
+
+
+
+
 
 
 
