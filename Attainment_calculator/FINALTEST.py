@@ -4,6 +4,7 @@ import pdfplumber
 import pandas as pd
 import json
 from openpyxl import Workbook
+from openpyxl import load_workbook
 
 app = Flask(__name__)
 
@@ -185,7 +186,7 @@ def get_clo_pso_input():
 
 def calculate_targets_and_attained(df_clo_pso, attainment_levels_df):
     # Ensure the DataFrame is numeric and handle missing values
-    df_clo_pso = df_clo_pso.apply(pd.to_numeric, errors='coerce').fillna(0)
+    df_clo_pso = df_clo_pso.apply(pd.to_numeric, errors='coerce')
     attainment_levels_df = [float(x) for x in attainment_levels_df]
     
     # Initialize lists for targets and attained values
@@ -195,13 +196,21 @@ def calculate_targets_and_attained(df_clo_pso, attainment_levels_df):
     # For each PO and PSO
     for column in df_clo_pso.columns:
         total_sum = 0
+        count_non_nan = 0  # Count of non-NaN values for the current column
+        
         for i in range(len(df_clo_pso)):
             value = df_clo_pso.iloc[i][column]
-            attainment = attainment_levels_df[i]
-            total_sum += (value * attainment) / 3
-
-        # Divide by the number of CLOs (assuming 6 CLOs)
-        attained_value = total_sum / len(df_clo_pso)
+            if not pd.isna(value):  # Only consider non-NaN values
+                attainment = attainment_levels_df[i]
+                total_sum += (value * attainment) / 3
+                count_non_nan += 1
+        
+        # Avoid division by zero if all values are NaN
+        if count_non_nan > 0:
+            attained_value = total_sum / count_non_nan
+        else:
+            attained_value = np.nan  # Or some other placeholder for no valid values
+        
         attained_values.append(attained_value)
 
     # Create DataFrames for targets and attained values
@@ -224,17 +233,101 @@ def calculate_targets_and_attained(df_clo_pso, attainment_levels_df):
 
     return targets, df_final
 
-
-# Function to write to Excel
-def save_to_excel(marks_df, attainment_df, split_up_df, df_clo_pso, targets, df_attained, output_path):
-    # Switch to openpyxl engine
+def save_to_excel(marks_df, info, total_attainment, attainment_df, split_up_df_without_sum, df_clo_pso, targets, df_attained, above_target_df, attainment_levels_df, output_path):
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        # Write each DataFrame to a separate sheet
+        # Write the marks DataFrame to the first sheet
         marks_df.to_excel(writer, sheet_name='Extracted Marks')
-        split_up_df.to_excel(writer, sheet_name='CO splitup')
-        df_clo_pso.to_excel(writer, sheet_name='PO splitup')
-        attainment_df.to_excel(writer, sheet_name='Attainment Table')
-        df_attained.to_excel(writer, sheet_name='Attained Values')
+
+        # Create the 'Attainment and Analysis' sheet
+        sheet_name = 'Attainment and Analysis'
+        workbook = writer.book
+        writer.sheets[sheet_name] = workbook.create_sheet(sheet_name)
+
+        # Define the starting row positions for each DataFrame
+        start_row_register = 0
+        start_row_split_up = start_row_register + len(marks_df) + 5  # 5 rows gap after the 'Register number' table
+        start_row_total_attainment = start_row_split_up + len(split_up_df_without_sum)
+        start_row_attainment = start_row_total_attainment + 5  # 5 rows gap after average attainment row
+        start_row_clo_pso = start_row_attainment + len(attainment_df) + 6  # 6 rows gap after attainment_df
+        start_row_attained = start_row_clo_pso + len(df_clo_pso) + 2  # 2 rows gap after df_clo_pso
+
+        # Write the split_up_df_without_sum DataFrame
+        split_up_df_without_sum.to_excel(writer, sheet_name=sheet_name, startrow=start_row_split_up, index=False)
+        
+        # Load the workbook to append the total possible attainment row
+        sheet = workbook[sheet_name]
+        
+        # Identify the end row of the "Register number" table
+        register_number_end_row = start_row_split_up + len(marks_df) + 1  # Adjust based on actual rows
+
+        # Write the "Total Possible Attainment" row
+        total_row = ['Total Possible Attainment'] + total_attainment.tolist()
+        for col_num, value in enumerate(total_row, 1):  # start from column 1 (A)
+            sheet.cell(row=start_row_total_attainment + 1, column=col_num).value = value
+
+        # Write the "No. of Students Above Target" and "Percentage of Students Above Target" rows
+        above_target_row1 = ['No. of Students Above Target'] + above_target_df['No. of Students'].tolist()
+        above_target_row2 = ['Percentage of Students Above Target'] + above_target_df['Percentage_of_Students'].tolist()
+        
+        for col_num, value in enumerate(above_target_row1, 1):  # start from column 1 (A)
+            sheet.cell(row=start_row_total_attainment + 2, column=col_num).value = value
+        for col_num, value in enumerate(above_target_row2, 1):  # start from column 1 (A)
+            sheet.cell(row=start_row_total_attainment + 3, column=col_num).value = value
+
+        # Write the "Attainment Levels" row directly under "Percentage of Students Above Target"
+        if isinstance(attainment_levels_df, list):
+            attainment_levels_df = ['Attainment Levels'] + attainment_levels_df
+
+        for col_num, value in enumerate(attainment_levels_df, 1):  # start from column 1 (A)
+            sheet.cell(row=start_row_total_attainment + 4, column=col_num).value = value
+
+        # Calculate the average of the six attainment values
+        attainment_values = attainment_levels_df[1:]  # skip the label
+        average_attainment = sum(attainment_values) / len(attainment_values)
+
+        # Write the "Average Attainment" row directly under "Attainment Levels"
+        sheet.cell(row=start_row_total_attainment + 5, column=1).value = 'Average Attainment'
+        sheet.cell(row=start_row_total_attainment + 5, column=2).value = average_attainment
+
+        # Write the other DataFrames to the specified rows in the sheet
+        attainment_df.to_excel(writer, sheet_name=sheet_name, startrow=start_row_attainment, index=False)
+        df_clo_pso.to_excel(writer, sheet_name=sheet_name, startrow=start_row_clo_pso, index=False)
+        df_attained.to_excel(writer, sheet_name=sheet_name, startrow=start_row_attained)
+
+    # After writing the DataFrames, use openpyxl to format the sheet
+    workbook = load_workbook(output_path)
+    sheet = workbook[sheet_name]
+    
+    
+    marks_sheet = workbook['Extracted Marks']
+    marks_sheet.column_dimensions['A'].width = 20
+    for col in range(2, 10):  # Columns B to I
+        marks_sheet.column_dimensions[chr(64 + col)].width = 15
+
+    # Set column widths
+    sheet.column_dimensions['A'].width = 20
+    for col in range(2, 12):  # B to K
+        sheet.column_dimensions[chr(64 + col)].width = 15
+
+    # Insert and merge rows, and add header information
+    sheet.insert_rows(1, 6)
+    sheet.merge_cells('H1:M1')
+    sheet['H1'] = 'SRM Institute of Science and Technology Vadapalani'
+    sheet.row_dimensions[1].height = 30
+
+    sheet.merge_cells('H2:M2')
+    sheet['H2'] = info.get('Program Section:', '')
+    sheet.row_dimensions[2].height = 30
+
+    sheet.merge_cells('H3:M3')
+    sheet['H3'] = info.get('Subject Code & Title:', '')
+    sheet.row_dimensions[3].height = 30
+
+    # Save the changes to the workbook
+    workbook.save(output_path)
+
+
+
 
 @app.route('/')
 def index():
@@ -347,17 +440,19 @@ def calculate_attainment_route():
         df_clo_pso = pd.DataFrame(COPOMapperTablevalues)
         print(df_clo_pso)
         targets, df_attained = calculate_targets_and_attained(df_clo_pso, attainment_levels_df)
+        print('hi')
+        print(df_attained)
         print(attainment_table)
         print(targets)
-        
 
         df_transposed = df_transposed.round(2)
         split_up_df_without_sum = split_up_df_without_sum.round(2)
         attainment_table = attainment_table.round(2)
-
+        
         output_filename = 'results.xlsx'
         output_path = os.path.join(results_dir, output_filename)
-
+        
+        save_to_excel(df_transposed, info, total_attainment, attainment_table, split_up_df_without_sum, df_clo_pso, targets, df_attained, above_target_df,attainment_levels_df, output_path)
         
         response = {
             'success': True,
@@ -375,4 +470,4 @@ def calculate_attainment_route():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
+    app.run(debug=True)
