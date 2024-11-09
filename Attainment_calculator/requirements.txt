@@ -2,3 +2,5 @@ Flask
 numpy
 pandas
 requests
+pdfplumber 
+openpyxl
